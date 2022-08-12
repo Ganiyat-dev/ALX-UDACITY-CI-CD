@@ -3,7 +3,12 @@ Description: >
 
 Parameters:
   WorkflowID:
-    Description: Unique identifier.
+    Description: Unique identifier. udapeople-jmk18
+    Run with:
+    aws cloudformation deploy \
+         --template-file cloudfront.yml \
+         --stack-name InitialStack\
+         --parameter-overrides WorkflowID=jmk18
     Type: String
 
 
