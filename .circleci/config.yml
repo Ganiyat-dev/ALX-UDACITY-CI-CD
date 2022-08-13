@@ -254,13 +254,14 @@ jobs:
     steps:
       - checkout
       - run:
-        name: Install dependencies
-          yum -y install sudo
-          yum -y install tar
-          yum install -y curl
-          sudo yum update -y
-          curl -sL https://rpm.nodesource.com/setup_13.x | sudo -E bash -
-          sudo yum install -y nodejs
+          name: Install dependencies
+          command: |
+            yum -y install sudo
+            yum -y install tar
+            yum install -y curl
+            sudo yum update -y
+            curl -sL https://rpm.nodesource.com/setup_13.x | sudo -E bash -
+            sudo yum install -y nodejs
       - attach_workspace:
           at: ~/
       - run:
