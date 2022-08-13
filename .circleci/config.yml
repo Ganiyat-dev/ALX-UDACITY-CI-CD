@@ -25,6 +25,24 @@ commands:
             aws cloudformation delete-stack \
             --stack-name udaPeople-frontend-<<parameters.workflow_id>>
 
+  install_awscli:
+    description: Install CLI
+    steps:
+      - run:
+          name: Install CLI
+          command: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+  install_nodejs:
+    description: Install Node.js 13
+    steps:
+      - run:
+          name: Install Node.js 13
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_13.x | sudo -E bash -
+            sudo apt install -y nodejs
+
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
@@ -36,16 +54,12 @@ commands:
           # Add when this will run
           when: on_fail
           command: |
-            Curl command here to see if there was a successful migration associated with the workflow id, store result in SUCCESS variable
-            SUCCESS = 1
-            if(( $SUCCESS==1 )); 
-            then
              cd ~/project/backend
              npm install
             #  Add revert code here. You can find this in the Getting Started section.
              npm run build
              npm run migrations:revert
-            fi
+            
 jobs:
   build-frontend:
     docker:
@@ -198,18 +212,6 @@ jobs:
       - run:
           name: Configure server
           command: |
-            # add environment variables to server
-            echo ENVIRONMENT=production > backend/.env
-            echo TYPEORM_CONNECTION=$TYPEORM_CONNECTION >> backend/.env
-            echo TYPEORM_DATABASE=$TYPEORM_DATABASE >> backend/.env
-            echo TYPEORM_ENTITIES=$TYPEORM_ENTITIES >> backend/.env
-            echo TYPEORM_HOST=$TYPEORM_HOST >> backend/.env
-            echo TYPEORM_MIGRATIONS=$TYPEORM_MIGRATIONS >> backend/.env
-            echo TYPEORM_MIGRATIONS_DIR=$TYPEORM_MIGRATIONS_DIR >> backend/.env
-            echo TYPEORM_PASSWORD=$TYPEORM_PASSWORD >> backend/.env
-            echo TYPEORM_PORT=$TYPEORM_PORT >> backend/.env
-            echo TYPEORM_USERNAME=$TYPEORM_USERNAME >> backend/.env
-            cat backend/.env
             cd .circleci/ansible
             ansible-playbook -i inventory.txt configure-server.yml 
       # save backend back to workspace
@@ -223,22 +225,15 @@ jobs:
   run-migrations:
     docker:
       # Docker image here that supports NodeJS
-      - image: python:3.10-alpine3.16
+      - image: cimg/node:13.8.0
     steps:
-
       - checkout
-      - run:
-          name: Install dependencies
-          command: |
-            apk add --update --no-cache tar gzip nodejs npm aws-cli curl
-      - restore_cache:
-          keys: [build-backend]
+      - install_awscli
       - run:
           name: Run database Migrations
           command: |
             cd backend
             npm install
-            npm run build
             npm run migrations >> migrations_dump.txt
             ls -al
             cat migrations_dump.txt
@@ -247,7 +242,7 @@ jobs:
           command: |
             if grep -q "migrations" ~/project/backend/migrations_dump.txt
             then
-              curl --insecure https://kvdb.io/E7jTDtBC9bBYVfZBPjPwkz/migration_$CIRCLE_WORKFLOW_ID:0:7 -d "18"
+              curl https://kvdb.io/E7jTDtBC9bBYVfZBPjPwkz/migration_$CIRCLE_WORKFLOW_ID:0:7 -d "18"
             fi
       # Here's where you will add some code to rollback on failure
       - destroy-environment:
@@ -257,23 +252,22 @@ jobs:
     docker:
       # Docker image here that supports AWS CLI
       - image: amazon/aws-cli
-      # - image: python:3.10-alpine3.16
     steps:
       - checkout
+      - run:
+        name: Install dependencies
+          yum -y install sudo
+          yum -y install tar
+          yum install -y curl
+          sudo yum update -y
+          curl -sL https://rpm.nodesource.com/setup_13.x | sudo -E bash -
+          sudo yum install -y nodejs
       - attach_workspace:
           at: ~/
       - run:
-          name: Install dependencies
-          command: |
-            apk add --update --no-cache tar gzip ansible aws-cli nodejs npm
-            apk add --update --no-cache tar gzip nodejs npm ansible curl aws-cli
-      - run:
           name: Get backend url
           command: |
-            export BACKEND_IP=$(aws ec2 describe-instances \
-            --query 'Reservations[*].Instances[*].PublicIpAddress' \
-            --filters Name=tag:aws:cloudformation:stack-name,Values=udaPeople-backend-${CIRCLE_WORKFLOW_ID:0:7} \
-            --output text)
+            export BACKEND_IP=$(tail -1 .circleci/ansible/inventory.txt)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "API_URL = ${API_URL}"
             echo "API_URL=http://${BACKEND_IP}:3030" >> frontend/.env
