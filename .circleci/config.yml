@@ -272,9 +272,9 @@ jobs:
               - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
       - attach_workspace:
           at: ~/
-        - install_nodejs
-        - install_awscli
-        - install_ansible
+      - install_nodejs
+      - install_awscli
+      - install_ansible
       - run:
           name: Get backend url
           command: |
