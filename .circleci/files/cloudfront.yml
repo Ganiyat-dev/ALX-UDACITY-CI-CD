@@ -4,11 +4,6 @@ Description: >
 Parameters:
   WorkflowID:
     Description: Unique identifier.
-    Run with:
-    `aws cloudformation deploy \
-    --template-file .circleci/files/cloudfront.yml \
-    --stack-name InitialStack \
-    --parameter-overrides WorkflowID=jmk18`
     Type: String
 
 

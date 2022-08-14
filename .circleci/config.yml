@@ -43,6 +43,17 @@ commands:
             curl -fsSL https://deb.nodesource.com/setup_13.x | sudo -E bash -
             sudo apt install -y nodejs
 
+  install_ansible:
+    description: Install Ansible
+    steps:
+      - run:
+          name: Install Ansible
+          command: |
+            sudo apt update
+            sudo apt install software-properties-common -y
+            sudo add-apt-repository --yes --update ppa:ansible/ansible
+            sudo apt install ansible -y
+
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
@@ -197,24 +208,23 @@ jobs:
   configure-infrastructure:
     docker:
       # Docker image here that supports Ansible
-      - image: python:3.10-alpine3.16
+      - image: cimg/base:stable
     steps:
       - checkout
       - add_ssh_keys:
           fingerprints:
             - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
-      - run:
-          name: Install dependencies
-          command: |
-            apk add --update --no-cache tar gzip ansible aws-cli
       - attach_workspace:
           at: ~/
+      - install_ansible
+      - install_awscli
       - restore_cache:
           keys: [build-backend]
       - run:
           name: Configure server
           command: |
             cd .circleci/ansible
+            cat inventory.txt
             ansible-playbook -i inventory.txt configure-server.yml \
             --key-file ~/.ssh/id_rsa_45bcc99416e5b16cc47529bd1d5ced4c
       # save backend back to workspace
@@ -251,44 +261,47 @@ jobs:
       - revert-migrations:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
   
-  # deploy-frontend:
-    # docker:
-    #   # Docker image here that supports AWS CLI
-    #   - image: amazon/aws-cli
-    # steps:
-    #   - checkout
-    #   - run:
-    #       name: Install dependencies
-    #       command: |
-    #         yum -y install sudo
-    #         yum -y install tar
-    #         yum install -y curl
-    #         sudo yum update -y
-    #         curl -sL https://rpm.nodesource.com/setup_13.x | sudo -E bash -
-    #         sudo yum install -y nodejs
-    #   - attach_workspace:
-    #       at: ~/
-    #   - run:
-    #       name: Get backend url
-    #       command: |
-    #         export BACKEND_IP=$(tail -1 .circleci/ansible/inventory.txt)
-    #         export API_URL="http://${BACKEND_IP}:3030"
-    #         echo "API_URL = ${API_URL}"
-    #         echo "API_URL=http://${BACKEND_IP}:3030" >> frontend/.env
-    #         cat frontend/.env
-    #   - run:
-    #       name: Deploy frontend objects
-    #       command: |
-    #         cd frontend
-    #         npm install
-    #         npm run build
-    #         tar -czvf artifact-"${CIRCLE_WORKFLOW_ID:0:7}".tar.gz dist
-    #         aws s3 cp dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
-    #   # Here's where you will add some code to rollback on failure
-    #   - destroy-environment:
-    #       workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-    #   - revert-migrations:
-    #       workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+  deploy-frontend:
+    docker:
+      # Docker image here that supports AWS CLI
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - add_ssh_keys:
+            fingerprints:
+              - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
+      - attach_workspace:
+          at: ~/
+        - install_nodejs
+        - install_awscli
+        - install_ansible
+      - run:
+          name: Get backend url
+          command: |
+            # your code here
+            export BACKEND_IP=$(aws ec2 describe-instances \
+            --query 'Reservations[*].Instances[*].PublicIpAddress' \
+            --filter Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7} \
+            --output text 
+            )
+            export API_URL="http://${BACKEND_IP}:3030"
+            echo "API_URL = ${API_URL}"
+            echo API_URL="http://${BACKEND_IP}:3030" >> frontend/.env
+            cat frontend/.env
+      - run:
+          name: Deploy frontend objects
+          command: |
+            cd frontend
+            sudo npm install -g npm@latest
+            rm -rf node_modules
+            npm install
+            npm run build
+            aws s3 cp dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
+      # Here's where you will add some code to rollback on failure
+      - destroy-environment:
+          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+      - revert-migrations:
+          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
 
 workflows:
   default:
@@ -312,6 +325,6 @@ workflows:
           requires: [deploy-infrastructure]
       - run-migrations:
           requires: [configure-infrastructure]
-      # - deploy-frontend:
-      #     requires: [run-migrations]
+      - deploy-frontend:
+          requires: [run-migrations]
           
