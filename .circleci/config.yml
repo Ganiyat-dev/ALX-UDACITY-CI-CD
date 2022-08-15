@@ -268,8 +268,8 @@ jobs:
     steps:
       - checkout
       - add_ssh_keys:
-            fingerprints:
-              - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
+          fingerprints:
+            - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
       - attach_workspace:
           at: ~/
       - install_nodejs
@@ -302,6 +302,42 @@ jobs:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
       - revert-migrations:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+  deploy-backend:
+        docker:
+      # Docker image here that supports Ansible
+    steps:
+      # Checkout code from git
+      - checkout
+      # Add ssh keys with fingerprint
+      - add_ssh_keys:
+          fingerprints:
+            - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
+      # attach workspace
+      - attach_workspace:
+          at: ~/
+      - install_nodejs
+      - install_awscli
+      - install_ansible
+      - run:
+          name: Deploy backend
+          command: |
+            cd backend
+            npm i
+            npm run build
+            cd ..
+            cd .circleci/ansible
+            mkdir files
+            cd files
+            tar -C ../../../backend -czvf artifact.tar.gz .
+            cd ../
+            
+            echo "Contents  of the inventory.txt file is -------"
+            cat inventory.txt
+            ansible-playbook -i inventory.txt deploy-backend.yml
+
+      - destroy-environment
+      - revert-migrations
+ 
 
 workflows:
   default:
@@ -327,4 +363,8 @@ workflows:
           requires: [configure-infrastructure]
       - deploy-frontend:
           requires: [run-migrations]
-          
+      - deploy-backend:
+          requires: [run-migrations]
+
+
+        
