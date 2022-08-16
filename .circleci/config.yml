@@ -2,11 +2,6 @@ version: 2.1
 orbs: 
   slack: circleci/slack@4.10.1
 
-parameters:
-  workflow_id:
-    type: string
-    default: '${CIRCLE_WORKFLOW_ID}'
-
 commands:
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
@@ -80,7 +75,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-frontend]
+          keys: [frontend-build]
       - run:
           name: Build front-end
           command: |
@@ -89,7 +84,7 @@ jobs:
             npm run build
       - save_cache:
           paths: [frontend/node_modules]
-          key: build-frontend
+          key: frontend-build
     
   build-backend:
     docker:
@@ -97,16 +92,16 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-backend]
+          keys: [backend-build]
       - run:
-          name: Back-end build
+          name: Backend build
           command: |
              cd backend
              npm install
              npm run build
       - save_cache:
           paths: [backend/node_modules]
-          key: build-backend
+          key: backend-build
         
   test-frontend:
     docker:
@@ -114,7 +109,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-frontend]
+          keys: [frontend-build]
       - run:
           name: Run front-end Test
           command: |
@@ -128,7 +123,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-backend]
+          keys: [backend-build]
       - run:
           name: run backend Test
           command: |
@@ -142,14 +137,14 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-frontend]
+          keys: [frontend-build]
       - run:
           name: scan frontend
           command: |
             cd frontend
             npm install
-            npm install oauth-sign@^0.9.0
-            npm audit fix
+            npm audit fix --audit-level=critical --force
+            npm audit --audit-level=critical
 
   scan-backend:
     docker:
@@ -157,15 +152,23 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          keys: [build-backend]
+          keys: [backend-build]
       - run:
           name: scan backend
           command: |
             cd backend
             npm install
-            npm install oauth-sign@^0.9.0
-            npm audit fix
-
+            npm audit fix --force
+            npm install --save-dev webpack@5.73.0
+            npm update mkdirp --depth 2
+            npm audit --audit-level=critical
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+      - slack/notify:
+          event: pass
+          template: success_tagged_deploy_1
+          
   deploy-infrastructure:
     docker:
       - image: amazon/aws-cli
@@ -192,10 +195,8 @@ jobs:
       - run:
           name: Add back-end ip to ansible inventory
           command: |
-            echo $(aws ec2 describe-instances \
-            --query 'Reservations[*].Instances[*].PublicIpAddress' \
-            --filters Name=tag:aws:cloudformation:stack-name,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7} \
-            --output text) >> ~/project/.circleci/ansible/inventory.txt
+            echo $(aws cloudformation describe-stacks --stack-name udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7} \
+            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIPAddress'].OutputValue" --output text) >> ~/project/.circleci/ansible/inventory.txt
             cat ~/project/.circleci/ansible/inventory.txt
       - persist_to_workspace:
           root: ~/
@@ -208,7 +209,7 @@ jobs:
   configure-infrastructure:
     docker:
       # Docker image here that supports Ansible
-      - image: cimg/base:stable
+      - image: python:3.10-alpine3.16
     steps:
       - checkout
       - add_ssh_keys:
@@ -216,132 +217,39 @@ jobs:
             - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
       - attach_workspace:
           at: ~/
-      - install_ansible
-      - install_awscli
-      - restore_cache:
-          keys: [build-backend]
+      - run:
+          name: Install dependencies
+          command: |
+            apk add --update --no-cache tar gzip ansible aws-cli
       - run:
           name: Configure server
           command: |
+            # add environment variables to server
+            echo ENVIRONMENT=production > backend/.env
+            echo TYPEORM_CONNECTION=$TYPEORM_CONNECTION >> backend/.env
+            echo TYPEORM_DATABASE=$TYPEORM_DATABASE >> backend/.env
+            echo TYPEORM_ENTITIES=$TYPEORM_ENTITIES >> backend/.env
+            echo TYPEORM_HOST=$TYPEORM_HOST >> backend/.env
+            echo TYPEORM_MIGRATIONS=$TYPEORM_MIGRATIONS >> backend/.env
+            echo TYPEORM_MIGRATIONS_DIR=$TYPEORM_MIGRATIONS_DIR >> backend/.env
+            echo TYPEORM_PASSWORD=$TYPEORM_PASSWORD >> backend/.env
+            echo TYPEORM_PORT=$TYPEORM_PORT >> backend/.env
+            echo TYPEORM_USERNAME=$TYPEORM_USERNAME >> backend/.env
+            cat backend/.env
+
             cd .circleci/ansible
-            cat inventory.txt
-            ansible-playbook -i inventory.txt configure-server.yml \
-            --key-file ~/.ssh/id_rsa_45bcc99416e5b16cc47529bd1d5ced4c
-      # save backend back to workspace
+            ansible-playbook -i inventory.txt configure-server.yml
       - persist_to_workspace:
           root: ~/
           paths:
-            - project/backend
-      # Here's where you will add some code to rollback on failure
-      - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-  
-  run-migrations:
-    docker:
-      # Docker image here that supports NodeJS
-      - image: circleci/node:13.8.0
-    steps:
-      - checkout
-      - run:
-          name: Run database Migrations
-          command: |
-            cd backend
-            npm install
-            npm run migrations > migrations_dump.txt
+            - project/backend/.env
 
-      - run:
-          name: Send migration results to kvdb
-          command: |
-            if grep -q "migrations" ~/project/backend/migrations_dump.txt
-            then
-              curl --insecure https://kvdb.io/E7jTDtBC9bBYVfZBPjPwkz/migration_$CIRCLE_WORKFLOW_ID:0:7 -d "18"
-            fi
       - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-      - revert-migrations:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+          workflow-id: ${CIRCLE_WORKFLOW_ID:0:7}
   
-  deploy-frontend:
-    docker:
-      # Docker image here that supports AWS CLI
-      - image: cimg/base:stable
-    steps:
-      - checkout
-      - add_ssh_keys:
-          fingerprints:
-            - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
-      - attach_workspace:
-          at: ~/
-      - install_nodejs
-      - install_awscli
-      - install_ansible
-      - run:
-          name: Get backend url
-          command: |
-            # your code here
-            export BACKEND_IP=$(aws ec2 describe-instances \
-            --query 'Reservations[*].Instances[*].PublicIpAddress' \
-            --filter Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7} \
-            --output text 
-            )
-            export API_URL="http://${BACKEND_IP}:3030"
-            echo "API_URL = ${API_URL}"
-            echo API_URL="http://${BACKEND_IP}:3030" >> frontend/.env
-            cat frontend/.env
-      - run:
-          name: Deploy frontend objects
-          command: |
-            cd frontend
-            sudo npm install -g npm@latest
-            rm -rf node_modules
-            npm install
-            npm run build
-            aws s3 cp dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
-      # Here's where you will add some code to rollback on failure
-      - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-      - revert-migrations:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-  deploy-backend:
-    docker:
-      - image: cimg/base:stable
-      # Docker image here that supports Ansible
-    steps:
-      # Checkout code from git
-      - checkout
-      # Add ssh keys with fingerprint
-      - add_ssh_keys:
-          fingerprints:
-            - '45:bc:c9:94:16:e5:b1:6c:c4:75:29:bd:1d:5c:ed:4c'
-      # attach workspace
-      - attach_workspace:
-          at: ~/
-      - install_nodejs
-      - install_awscli
-      - install_ansible
-      - run:
-          name: Deploy backend
-          command: |
-            cd backend
-            npm i
-            npm run build
-            cd ..
-            cd .circleci/ansible
-            mkdir files
-            cd files
-            tar -C ../../../backend -czvf artifact.tar.gz .
-            cd ../
-            
-            echo "Contents  of the inventory.txt file is -------"
-            cat inventory.txt
-            ansible-playbook -i inventory.txt deploy-backend.yml
-      - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-      - revert-migrations:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+  
 
  
-
 workflows:
   default:
     jobs:
@@ -351,10 +259,11 @@ workflows:
           requires: [build-frontend]
       - test-backend:
           requires: [build-backend]
+      - scan-backend:
+          context: slack-secrets
+          requires: [build-backend]
       - scan-frontend:
           requires: [build-frontend]
-      - scan-backend:
-          requires: [build-backend]
       - deploy-infrastructure:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
@@ -362,12 +271,11 @@ workflows:
               only: [master]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
-      - run-migrations:
-          requires: [configure-infrastructure]
-      - deploy-frontend:
-          requires: [run-migrations]
-      - deploy-backend:
-          requires: [run-migrations]
-
+      # - run-migrations:
+      #     requires: [configure-infrastructure]
+      # - deploy-frontend:
+      #     requires: [run-migrations]
+      # - deploy-backend:
+      #     requires: [run-migrations]
 
         
