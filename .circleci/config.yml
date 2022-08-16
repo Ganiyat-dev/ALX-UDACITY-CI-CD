@@ -20,35 +20,6 @@ commands:
             aws cloudformation delete-stack \
             --stack-name udapeople-frontend-<<parameters.workflow_id>>
 
-  install_awscli:
-    description: Install CLI
-    steps:
-      - run:
-          name: Install CLI
-          command: |
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-  install_nodejs:
-    description: Install Node.js 13
-    steps:
-      - run:
-          name: Install Node.js 13
-          command: |
-            curl -fsSL https://deb.nodesource.com/setup_13.x | sudo -E bash -
-            sudo apt install -y nodejs
-
-  install_ansible:
-    description: Install Ansible
-    steps:
-      - run:
-          name: Install Ansible
-          command: |
-            sudo apt update
-            sudo apt install software-properties-common -y
-            sudo add-apt-repository --yes --update ppa:ansible/ansible
-            sudo apt install ansible -y
-
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
@@ -174,7 +145,6 @@ jobs:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - run: yum install -y tar gzip
       - run:
           name: Ensure back-end infrastructure exists
           command: |
@@ -247,9 +217,6 @@ jobs:
       - destroy-environment:
           workflow-id: ${CIRCLE_WORKFLOW_ID:0:7}
   
-  
-
- 
 workflows:
   default:
     jobs:
@@ -260,7 +227,6 @@ workflows:
       - test-backend:
           requires: [build-backend]
       - scan-backend:
-          context: slack-secrets
           requires: [build-backend]
       - scan-frontend:
           requires: [build-frontend]
@@ -271,11 +237,5 @@ workflows:
               only: [master]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
-      # - run-migrations:
-      #     requires: [configure-infrastructure]
-      # - deploy-frontend:
-      #     requires: [run-migrations]
-      # - deploy-backend:
-      #     requires: [run-migrations]
 
         
