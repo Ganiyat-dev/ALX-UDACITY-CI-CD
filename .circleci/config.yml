@@ -216,6 +216,7 @@ jobs:
 
             cd .circleci/ansible
             ansible-playbook -i inventory.txt configure-server.yml
+          no_output_timeout: 30m
       - persist_to_workspace:
           root: ~/
           paths:
