@@ -9,17 +9,6 @@ This project contain the following:
 
 ![Diagram of CI/CD Pipeline we will be building.](udapeople.png)
 
-### Instructions
-
-* [Selling CI/CD](instructions/0-selling-cicd.md)
-* [Getting Started](instructions/1-getting-started.md)
-* [Deploying Working, Trustworthy Software](instructions/2-deploying-trustworthy-code.md)
-* [Configuration Management](instructions/3-configuration-management.md)
-* [Turn Errors into Sirens](instructions/4-turn-errors-into-sirens.md)
-
-
-Before you submit your project, please check your work against the project rubric. If you haven’t satisfied each criterion in the rubric, then revise your work so that you have met all the requirements. 
-
 ### Built With
 
 - [Circle CI](www.circleci.com) - Cloud-based CI/CD service
