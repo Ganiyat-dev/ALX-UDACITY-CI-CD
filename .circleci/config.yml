@@ -382,7 +382,6 @@ jobs:
       - image: cimg/base:stable
     steps:
       - checkout
-     
       - install_nodejs
       - install_awscli
       - run:
@@ -405,13 +404,13 @@ jobs:
       - run:
           name: Frontend smoke test.
           command: |
-              FRONTEND_WEBSITE=http://udapeople-${CIRCLE_WORKFLOW_ID:0:7}.s3-website.${AWS_DEFAULT_REGION}.amazonaws.com
-              echo $FRONTEND_WEBSITE
-              if curl -s $FRONTEND_WEBSITE | grep "Welcome"
+              URL=http://udapeople-${CIRCLE_WORKFLOW_ID:0:7}.s3-website.${AWS_DEFAULT_REGION}.amazonaws.com
+              echo ${URL}
+              if curl -s ${URL} | grep "Welcome"
               then
-                exit 0
+                return 1
               else
-                exit 1
+                return 1
               fi
       - destroy-environment:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
