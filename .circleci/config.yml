@@ -336,6 +336,41 @@ jobs:
       - destroy-environment
       - revert-migrations
 
+  deploy-backend:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints: 
+            - "bb:a8:42:96:67:f5:73:e1:dc:2e:68:cd:fa:bd:4b:5b"
+      - attach_workspace:
+          at: ~/
+      - install_nodejs
+      - install_awscli
+      - install_ansible
+      - run:
+          name: Deploy backend
+          command: |
+            cd backend
+
+            npm i
+            npm run build
+            cd ..
+
+            cd .circleci/ansible
+            mkdir files
+            cd files
+            tar -C ../../../backend -czvf artifact.tar.gz .
+            cd ../
+            
+            echo "Contents  of the inventory.txt file is ********"
+            cat inventory.txt
+            ansible-playbook -i inventory.txt deploy-backend.yml
+
+      - destroy-environment
+      - revert-migrations
+
 workflows:
   default:
     jobs:
